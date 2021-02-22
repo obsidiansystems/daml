@@ -219,6 +219,66 @@ testsForDamlcTest damlc = testGroup "damlc test" $
                      , "Foo:T:Archive\n"
                      ] `isSuffixOf`
                  stdout)
+    , testCase "Full test coverage report with --all" $ do
+        withTempDir $ \dir -> do
+            let fooFile = dir </> "Foo.daml"
+            let barFile = dir </> "Bar.daml"
+            T.writeFileUtf8 fooFile $ T.unlines
+              [ "module Foo where"
+              , "import Bar"
+              , "template S with p : Party where"
+              , "  signatory p"
+              , "template T with p : Party where"
+              , "  signatory p"
+              , "  choice X : () with controller p"
+              , "    do pure ()"
+              , "x = scenario do"
+              , "      alice <- getParty \"Alice\""
+              , "      c <- submit alice $ create T with p = alice"
+              , "      submit alice $ exercise c X with"
+              ]
+            T.writeFileUtf8 barFile $ T.unlines
+              [ "module Bar where"
+              , "template U with p : Party where"
+              , "  signatory p"
+
+              , "  choice Y : () with"
+              , "    controller p"
+              , "      do return ()"
+              , "y = scenario do"
+              , "  alice <- getParty \"Alice\""
+              , "  submit alice $ create U with p = alice"
+              ]
+            (exitCode, stdout, _stderr) <-
+              readProcessWithExitCode damlc ["test", "--show-coverage", "--files", fooFile] ""
+            exitCode @?= ExitSuccess
+            assertBool
+                ("test coverage is reported correctly: " <> stdout)
+                (unlines
+                     [ "test coverage: templates 50%, choices 33%"
+                     , "templates never created:"
+                     , "Foo:S"
+                     , "choices never executed:"
+                     , "Foo:S:Archive"
+                     , "Foo:T:Archive\n"
+                     ] `isSuffixOf`
+                 stdout)
+            (exitCode, stdout, _stderr) <-
+              readProcessWithExitCode damlc ["test", "--show-coverage", "--all", "--files", fooFile] ""
+            exitCode @?= ExitSuccess
+            assertBool
+                ("test coverage is reported correctly: " <> stdout)
+                (unlines
+                     [ "test coverage: templates 67%, choices 20%"
+                     , "templates never created:"
+                     , "Foo:S"
+                     , "choices never executed:"
+                     , "Bar:U:Archive"
+                     , "Bar:U:Y"
+                     , "Foo:S:Archive"
+                     , "Foo:T:Archive\n"
+                     ] `isSuffixOf`
+                 stdout)
     , testCase "File with failing scenario" $ do
         withTempDir $ \dir -> do
             let file = dir </> "Foo.daml"
