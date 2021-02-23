@@ -9,14 +9,18 @@ import com.daml.platform.indexer.IndexerConfig._
 
 import scala.concurrent.duration.{DurationInt, FiniteDuration}
 
-case class IndexerConfig(
-    participantId: ParticipantId,
-    jdbcUrl: String,
-    startupMode: IndexerStartupMode,
-    restartDelay: FiniteDuration = DefaultRestartDelay,
-    eventsPageSize: Int = IndexConfiguration.DefaultEventsPageSize,
-    allowExistingSchema: Boolean = false,
-)
+case class IndexerConfig(participantId: ParticipantId,
+                         jdbcUrl: String,
+                         startupMode: IndexerStartupMode,
+                         restartDelay: FiniteDuration = DefaultRestartDelay,
+                         eventsPageSize: Int = IndexConfiguration.DefaultEventsPageSize,
+                         allowExistingSchema: Boolean = false,
+                         inputMappingParallelism: Int = 1,
+                         ingestionParallelism: Int = 1,
+                         submissionBatchSize: Long = 1L,
+                         tailingRateLimitPerSecond: Int = 100,
+                         batchWithinMillis: Long = 10,
+                        )
 
 object IndexerConfig {
 
