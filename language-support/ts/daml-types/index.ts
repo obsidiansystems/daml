@@ -18,6 +18,7 @@ export interface Serializable<T> {
    * @internal Encodes T in expected shape for JSON API.
    */
   encode: (t: T) => unknown;
+  tag: string;
 }
 
 /**
@@ -44,6 +45,7 @@ export interface Template<T extends object, K = unknown, I extends string = stri
    */
   keyEncode: (k: K) => unknown;
   Archive: Choice<T, {}, {}, K>;
+  choices: string[];
 }
 
 /**
@@ -72,6 +74,10 @@ export interface Choice<T extends object, C, R, K = unknown> {
    */
   argumentEncode: (c: C) => unknown;
   /**
+   * A description of the argument type of this Choice.
+   */
+  argumentMeta: any; // This should of course have a proper type.
+  /**
    * @internal Returns a deocoder to decode the return value.
    */
   resultDecoder: jtv.Decoder<R>;
@@ -79,13 +85,14 @@ export interface Choice<T extends object, C, R, K = unknown> {
   /**
    * The choice name.
    */
+  resultMeta: any; // This should of course have a proper type.
   choiceName: string;
 }
 
 /**
  * @internal
  */
-const registeredTemplates: {[key: string]: Template<object>} = {};
+export const registeredTemplates: {[key: string]: Template<object>} = {};
 
 /**
  * @internal
@@ -158,6 +165,7 @@ export interface Unit {
 export const Unit: Serializable<Unit> = {
   decoder: jtv.object({}),
   encode: (t: Unit) => t,
+  tag: 'Unit',
 }
 
 /**
@@ -171,6 +179,7 @@ export type Bool = boolean;
 export const Bool: Serializable<Bool> = {
   decoder: jtv.boolean(),
   encode: (b: Bool) => b,
+  tag: 'Bool',
 }
 
 /**
@@ -186,6 +195,7 @@ export type Int = string;
 export const Int: Serializable<Int> = {
   decoder: jtv.string(),
   encode: (i: Int) => i,
+  tag: 'Int',
 }
 
 /**
@@ -212,6 +222,7 @@ export const Numeric = (_: number): Serializable<Numeric> =>
   ({
     decoder: jtv.string(),
     encode: (n: Numeric): unknown => n,
+    tag: 'Numeric'; // possible issue of lost info here?
   })
 
 /**
@@ -230,6 +241,7 @@ export type Text = string;
 export const Text: Serializable<Text> = {
   decoder: jtv.string(),
   encode: (t: Text) => t,
+  tag: 'Text',
 }
 
 /**
@@ -245,6 +257,7 @@ export type Time = string;
 export const Time: Serializable<Time> = {
   decoder: jtv.string(),
   encode: (t: Time) => t,
+  tag: 'Time',
 }
 
 /**
@@ -260,6 +273,7 @@ export type Party = string;
 export const Party: Serializable<Party> = {
   decoder: jtv.string(),
   encode: (p: Party) => p,
+  tag: 'Party',
 }
 
 /**
@@ -277,6 +291,8 @@ export type List<T> = T[];
 export const List = <T>(t: Serializable<T>): Serializable<T[]> => ({
   decoder: jtv.array(t.decoder),
   encode: (l: List<T>): unknown => l.map((element: T) => t.encode(element)),
+  parameter: t,
+  tag: 'List';
 });
 
 /**
@@ -292,6 +308,7 @@ export type Date = string;
 export const Date: Serializable<Date> = {
   decoder: jtv.string(),
   encode: (d: Date) => d,
+  tag: 'Date',
 }
 
 
@@ -322,6 +339,8 @@ export type ContractId<T> = string & { [ContractIdBrand]: T }
 export const ContractId = <T>(_t: Serializable<T>): Serializable<ContractId<T>> => ({
   decoder: jtv.string() as jtv.Decoder<ContractId<T>>,
   encode: (c: ContractId<T>): unknown => c,
+  parameter: _t,
+  tag: 'ContractId',
 });
 
 /**
@@ -347,6 +366,8 @@ class OptionalWorker<T> implements Serializable<Optional<T>> {
   decoder: jtv.Decoder<Optional<T>>;
   private innerDecoder: jtv.Decoder<OptionalInner<T>>;
   encode: (o: Optional<T>) => unknown;
+  parameter: Serializable<T>;
+  tag: string;
 
   constructor(payload: Serializable<T>) {
     if (payload instanceof OptionalWorker) {
@@ -393,6 +414,8 @@ class OptionalWorker<T> implements Serializable<Optional<T>> {
       }
     }
     this.decoder = jtv.oneOf(jtv.constant(null), this.innerDecoder);
+    this.parameter = payload;
+    this.tag = 'Optional';
   }
 }
 
@@ -519,4 +542,7 @@ export const emptyMap = <K, V>(): Map<K, V> => new MapImpl<K, V>([]);
 export const Map = <K, V>(kd: Serializable<K>, vd: Serializable<V>): Serializable<Map<K, V>> => ({
   decoder: jtv.array(jtv.tuple([kd.decoder, vd.decoder])).map(kvs => new MapImpl(kvs)),
   encode: (m: Map<K, V>): unknown => m.entriesArray(),
+  valueParameter: vd,
+  keyParameter: kd,
+  tag: 'Map',
 });

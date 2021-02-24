@@ -361,6 +361,7 @@ renderTemplateDef TemplateDef{..} =
             , "  keyEncode: " <> renderEncode tplKeyEncode <> ","
             , "  decoder: " <> renderDecoder (DecoderLazy tplDecoder) <> ","
             , "  encode: " <> renderEncode tplEncode <> ","
+            , "  choices: ['" <> T.intercalate "', '" (chcName' <$> tplChoices') <> "'],"
             ]
           , concat
             [ [ "  " <> chcName' <> ": {"
@@ -368,8 +369,10 @@ renderTemplateDef TemplateDef{..} =
               , "    choiceName: '" <> chcName' <> "',"
               , "    argumentDecoder: " <> renderDecoder (DecoderLazy (DecoderRef chcArgTy)) <> ","
               , "    argumentEncode: " <> renderEncode (EncodeRef chcArgTy) <> ","
+              , "    argumentMeta: " <> snd (genType chcArgTy) <> ","
               , "    resultDecoder: " <> renderDecoder (DecoderLazy (DecoderRef chcRetTy)) <> ","
               , "    resultEncode: " <> renderEncode (EncodeRef chcRetTy) <> ","
+              , "    resultMeta: " <> snd (genType chcRetTy) <> ","
               , "  },"
               ]
             | ChoiceDef{..} <- tplChoices'
@@ -439,7 +442,8 @@ renderSerializableDef SerializableDef{..}
           , [ "  " <> k <> ": " <> "'" <> k <> "'," | k <- serKeys ]
           , [ "  keys: [" <> T.concat (map (\s -> "'" <> s <> "',") serKeys) <> "]," | notNull serKeys ]
           , [ "  decoder: " <> renderDecoder (DecoderLazy serDecoder) <> ",",
-              "  encode: " <> renderEncode serEncode <> ","
+              "  encode: " <> renderEncode serEncode <> ",",
+              "  meta: " <> renderEncodeAsMeta serEncode <> ","
             ]
           , concat $
             [ [ "  " <> field <> ":({"
@@ -552,6 +556,36 @@ renderEncode = \case
           | (name, tr) <- fields, let (_, companion) = genType tr ]
         , [ "  };"
           , "}" ] ]
+    EncodeThrow -> "function () { throw 'EncodeError'; }"
+
+-- | Generate a structure holding a runtime description of this type, for
+-- generic code to use.
+--
+-- Note: This shouldn't really be running off the Encode data type, but in the
+-- interest of expediency of showing the proposed solution Encode _does_
+-- contain all the information we need here. Fix before merging, of course.
+renderEncodeAsMeta :: Encode -> T.Text
+renderEncodeAsMeta = \case
+    EncodeRef ref -> let (_, companion) = genType ref in
+        companion
+    EncodeVariant _ alts -> T.unlines $ concat
+        [ [ "{ tag: 'oneOf', "
+          , "  items: {"
+          ]
+        , [ "    " <> name <> ": " <> companion <> ","
+          | (name, tr) <- alts, let (_, companion) = genType tr ]
+        , [ "  }"
+          , "}" ] ]
+    EncodeAsIs -> "{ tag: 'enum' }"
+    EncodeRecord fields -> T.unlines $ concat
+        [ [ "{"
+          , "    tag: 'recordOf', "
+          , "    items: {"
+          ]
+        , [ "      " <> name <> ": " <> companion <> ","
+          | (name, tr) <- fields, let (_, companion) = genType tr ]
+        , [ "    }"
+          , "  }" ] ]
     EncodeThrow -> "function () { throw 'EncodeError'; }"
 
 data TypeDef
