@@ -14,24 +14,40 @@ load(
     "//language-support/scala/codegen:codegen.bzl",
     "dar_to_scala",
 )
+load("@scala_version//:index.bzl", "scala_major_version")
+load("@scala_version//:index.bzl", "scala_major_version")
 load(
     "//daml-lf/language:daml-lf.bzl",
-    "lf_dev_version",
-    "lf_latest_version",
-    "lf_preview_version",
-    "lf_stable_version",
+    "lf_version_configuration",
+    "lf_version_configuration_versions",
+    "mangle_for_java",
 )
-load("@scala_version//:index.bzl", "scala_major_version")
 
-# Tuples of (lf_version, name_suffix)
-# The DAML files are compiled once for each daml-lf version listed here.
-test_common_configurations = [
-    (lf_stable_version, ""),
-    (lf_latest_version, "-latest"),
-    (lf_dev_version, "-dev"),
-] + [
-    (v, "-preview")
-    for v in lf_preview_version
+alias(
+    name = "dar-files",
+    actual = "dar-files-stable",
+    visibility = ["//visibility:public"],
+)
+
+[
+    [
+        # alias model-tests-KEYWORD.dar, dar-files-KEYWORD, and dar-files-KEYWORD-lib
+        # to model-tests-TAG.dar, dar-files-TAG, and dar-files-TAG-lib
+        # where : KEYWORD is a keyword like stable, latest, or dev
+        #         TAG is a (java friendly) version TAG like 1_8
+        #         The mapping KEYWORD -> TAG is defined by test_common_configurations
+        alias(
+            name = "%s-%s%s" % (target_prefix, name, target_suffix),
+            actual = ":%s-%s%s" % (target_prefix, lf_version, target_suffix),
+            visibility = ["//visibility:public"],
+        ),
+    ]
+    for (target_prefix, target_suffix) in [
+        ("model-tests", ".dar"),
+        ("dar-files", ""),
+        ("dar-files", "-lib"),
+    ]
+    for (name, lf_version) in lf_version_configuration.items()
 ]
 
 da_scala_library(
@@ -52,22 +68,25 @@ da_scala_library(
 [
     [
         daml_compile(
-            name = "%s-tests%s" % (test_name, target_suffix),
+            name = "%s-tests-%s" % (test_name, target),
             srcs = glob(["src/main/daml/%s/*.daml" % test_name]),
+            project_name = "%s-tests" % test_name,
             target = target,
             visibility = ["//visibility:public"],
         ),
         dar_to_scala(
-            name = "%s-tests%s.scala-codegen" % (test_name, target_suffix),
-            srcs = [":%s-tests%s.dar" % (test_name, target_suffix)],
+            name = "%s-tests-%s.scala-codegen" % (test_name, target),
+            srcs = [":%s-tests-%s.dar" % (test_name, target)],
             package_prefix = "com.daml.ledger.test.%s" % test_name,
-            srcjar_out = "%s%s.scala.srcjar" % (test_name, target_suffix),
+            srcjar_out = "%s-%s.scala.srcjar" % (test_name, target),
             verbosity = 2,
             visibility = ["//visibility:public"],
         ),
         da_scala_library(
-            name = "%s-tests%s.scala" % (test_name, target_suffix),
-            srcs = [":%s-tests%s.scala-codegen" % (test_name, target_suffix)],
+            name = "%s-tests-%s.scala" % (test_name, target),
+            srcs = [
+                ":%s-tests-%s.scala-codegen" % (test_name, target),
+            ],
             plugins = [silencer_plugin],
             scala_deps = extra_deps,
             scalacopts = [
@@ -89,21 +108,51 @@ da_scala_library(
             ["@maven//:org_scala_lang_modules_scala_collection_compat"],
         ),
         ("performance", []),
+        ("package_management", []),
     ]
-    for (target, target_suffix) in test_common_configurations
+    for target in lf_version_configuration_versions
 ]
 
 [
     [
+        genrule(
+            name = "dar-files-lookup-%s.scala" % target,
+            outs = ["Dars-%s.scala" % mangle_for_java(target)],
+            cmd = """
+cat > $@ <<EOF
+package com.daml.ledger.test
+object TestDars {
+    val fileNames: Map[String, String] =
+      List(
+        "model",
+        "performance",
+        "semantic",
+        "package_management",
+      )
+      .map(name => name -> ("ledger/test-common/" + name + "-tests-%s.dar"))
+      .toMap
+}
+EOF
+""" % target,
+        ),
+        da_scala_library(
+            name = "dar-files-%s-lib" % target,
+            srcs = [":dar-files-lookup-%s.scala" % target],
+            generated_srcs = [":dar-file-names-scala-%s" % target],
+            # generated_srcs is required for scaladoc
+            resources = ["dar-files-%s" % target],
+            visibility = ["//ledger:__subpackages__"],
+        ),
         filegroup(
-            name = "dar-files%s" % target_suffix,
+            name = "dar-files-%s" % target,
             srcs = [
-                ":model-tests%s.dar" % target_suffix,
-                ":performance-tests%s.dar" % target_suffix,
-                ":semantic-tests%s.dar" % target_suffix,
+                ":model-tests-%s.dar" % target,
+                ":performance-tests-%s.dar" % target,
+                ":semantic-tests-%s.dar" % target,
+                ":package_management-tests-%s.dar" % target,
             ],
             visibility = ["//visibility:public"],
         ),
     ]
-    for (target, target_suffix) in test_common_configurations
+    for target in lf_version_configuration_versions
 ]

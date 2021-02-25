@@ -59,8 +59,8 @@ davl_v3_version = "51d3977be2ab22f7f4434fd4692ca2e17a7cce23"
 davl_v3_sha256 = "e8e76e21b50fb3adab36df26045b1e8c3ee12814abc60f137d39b864d2eae166"
 
 # daml cheat sheet
-daml_cheat_sheet_version = "9d44b550de6c5d23096116da37ccb2fb4a90f7af"  # 2020-06-30
-daml_cheat_sheet_sha256 = "6429b73e33a7a937048c3d1316182bff0cb34b6aed30e2915875da698ee4d5c9"
+daml_cheat_sheet_version = "c00b95f4d600a26baf9beed4f9f015ba94b5b458"  # 2021-02-24
+daml_cheat_sheet_sha256 = "e9f0ef38baf2f04772399736f1b3b04bc2bb15cc76169c2cf97fff7ee753a81d"
 
 platforms_version = "0.0.3"
 platforms_sha256 = "15b66b5219c03f9e8db34c1ac89c458bb94bfe055186e5505d5c6f09cb38307f"
@@ -223,9 +223,9 @@ def daml_deps():
     if "com_github_grpc_grpc" not in native.existing_rules():
         http_archive(
             name = "com_github_grpc_grpc",
-            strip_prefix = "grpc-ea22dd6f1b610a37a44be3e9050addbe8a1cb59d",
-            urls = ["https://github.com/grpc/grpc/archive/ea22dd6f1b610a37a44be3e9050addbe8a1cb59d.tar.gz"],
-            sha256 = "c89c54c5fb9b4b4b0b7ecfa7cd6bbbdecd060bac81ba35b9ee997c1342934b16",
+            strip_prefix = "grpc-1.36.0",
+            urls = ["https://github.com/grpc/grpc/archive/v1.36.0.tar.gz"],
+            sha256 = "1a5127c81487f4e3e57973bb332f04b9159f94d860c207e096d8a587d371edbd",
             patches = [
                 "@com_github_digital_asset_daml//bazel_tools:grpc-bazel-mingw.patch",
             ],
