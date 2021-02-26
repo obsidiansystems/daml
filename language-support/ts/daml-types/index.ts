@@ -19,6 +19,7 @@ export interface Serializable<T> {
    */
   encode: (t: T) => unknown;
   tag: string;
+  parameters: any[]; // dependent typing; probably should be combined with tag.
 }
 
 /**
@@ -166,6 +167,7 @@ export const Unit: Serializable<Unit> = {
   decoder: jtv.object({}),
   encode: (t: Unit) => t,
   tag: 'Unit',
+  parameters: [],
 }
 
 /**
@@ -180,6 +182,7 @@ export const Bool: Serializable<Bool> = {
   decoder: jtv.boolean(),
   encode: (b: Bool) => b,
   tag: 'Bool',
+  parameters: [],
 }
 
 /**
@@ -196,6 +199,7 @@ export const Int: Serializable<Int> = {
   decoder: jtv.string(),
   encode: (i: Int) => i,
   tag: 'Int',
+  parameters: [],
 }
 
 /**
@@ -218,11 +222,12 @@ export type Decimal = Numeric;
  * Companion function of the [[Numeric]] type.
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const Numeric = (_: number): Serializable<Numeric> =>
+export const Numeric = (r: number): Serializable<Numeric> =>
   ({
     decoder: jtv.string(),
     encode: (n: Numeric): unknown => n,
-    tag: 'Numeric'; // possible issue of lost info here?
+    tag: 'Numeric', // possible issue of lost info here?
+    parameters: [r],
   })
 
 /**
@@ -242,6 +247,7 @@ export const Text: Serializable<Text> = {
   decoder: jtv.string(),
   encode: (t: Text) => t,
   tag: 'Text',
+  parameters: [],
 }
 
 /**
@@ -258,6 +264,7 @@ export const Time: Serializable<Time> = {
   decoder: jtv.string(),
   encode: (t: Time) => t,
   tag: 'Time',
+  parameters: [],
 }
 
 /**
@@ -274,6 +281,7 @@ export const Party: Serializable<Party> = {
   decoder: jtv.string(),
   encode: (p: Party) => p,
   tag: 'Party',
+  parameters: [],
 }
 
 /**
@@ -291,8 +299,8 @@ export type List<T> = T[];
 export const List = <T>(t: Serializable<T>): Serializable<T[]> => ({
   decoder: jtv.array(t.decoder),
   encode: (l: List<T>): unknown => l.map((element: T) => t.encode(element)),
-  parameter: t,
-  tag: 'List';
+  tag: 'List',
+  parameters: [t],
 });
 
 /**
@@ -309,6 +317,7 @@ export const Date: Serializable<Date> = {
   decoder: jtv.string(),
   encode: (d: Date) => d,
   tag: 'Date',
+  parameters: [],
 }
 
 
@@ -339,8 +348,8 @@ export type ContractId<T> = string & { [ContractIdBrand]: T }
 export const ContractId = <T>(_t: Serializable<T>): Serializable<ContractId<T>> => ({
   decoder: jtv.string() as jtv.Decoder<ContractId<T>>,
   encode: (c: ContractId<T>): unknown => c,
-  parameter: _t,
   tag: 'ContractId',
+  parameters: [_t],
 });
 
 /**
@@ -366,8 +375,8 @@ class OptionalWorker<T> implements Serializable<Optional<T>> {
   decoder: jtv.Decoder<Optional<T>>;
   private innerDecoder: jtv.Decoder<OptionalInner<T>>;
   encode: (o: Optional<T>) => unknown;
-  parameter: Serializable<T>;
   tag: string;
+  parameters: Serializable<T>[];
 
   constructor(payload: Serializable<T>) {
     if (payload instanceof OptionalWorker) {
@@ -414,8 +423,8 @@ class OptionalWorker<T> implements Serializable<Optional<T>> {
       }
     }
     this.decoder = jtv.oneOf(jtv.constant(null), this.innerDecoder);
-    this.parameter = payload;
     this.tag = 'Optional';
+    this.parameters = [payload];
   }
 }
 
@@ -445,7 +454,9 @@ export const TextMap = <T>(t: Serializable<T>): Serializable<TextMap<T>> => ({
       out[k] = t.encode(tm[k]);
     });
     return out;
-  }
+  },
+  tag: 'TextMap',
+  parameters: [ t ],
 });
 
 /**
@@ -542,7 +553,6 @@ export const emptyMap = <K, V>(): Map<K, V> => new MapImpl<K, V>([]);
 export const Map = <K, V>(kd: Serializable<K>, vd: Serializable<V>): Serializable<Map<K, V>> => ({
   decoder: jtv.array(jtv.tuple([kd.decoder, vd.decoder])).map(kvs => new MapImpl(kvs)),
   encode: (m: Map<K, V>): unknown => m.entriesArray(),
-  valueParameter: vd,
-  keyParameter: kd,
   tag: 'Map',
+  parameters: [kd, vd],
 });

@@ -79,6 +79,9 @@ const Foo: Template<Foo, string, "foo-id"> = {
   decoder: jtv.object({key: jtv.string()}),
   encode: (o) => o,
   Archive: {} as unknown as Choice<Foo, {}, {}, string>,
+  choices: ["Archive"],
+  tag: "template",
+  parameters: []
 };
 
 const fooCreateEvent = (

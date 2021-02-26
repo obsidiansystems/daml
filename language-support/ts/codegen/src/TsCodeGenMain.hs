@@ -218,7 +218,10 @@ genModule pkgMap (Scope scope) curPkgId mod
       , "/* eslint-disable-next-line no-unused-vars */"
       , "var damlTypes = require('@daml/types');"
       , "/* eslint-disable-next-line no-unused-vars */"
+      , "var damlTypesMeta = require('@daml/types-meta');"
+      , "/* eslint-disable-next-line no-unused-vars */"
       , "var damlLedger = require('@daml/ledger');"
+      , "exports.meta={types: Object.create(null), templates: Object.create(null)};"
       ]
     modHeader ES6 =
       [ "// Generated from " <> modPath (unModuleName modName) <> ".daml"
@@ -229,6 +232,7 @@ genModule pkgMap (Scope scope) curPkgId mod
       , "import * as damlTypes from '@daml/types';"
       , "/* eslint-disable-next-line @typescript-eslint/no-unused-vars */"
       , "import * as damlLedger from '@daml/ledger';"
+      , "declare var meta: {types: {[prop: string]: Meta}, templates: {[prop: string]: TemplateMeta }};"
       ]
 
     -- Split the imports into those from the same package and those
@@ -361,7 +365,6 @@ renderTemplateDef TemplateDef{..} =
             , "  keyEncode: " <> renderEncode tplKeyEncode <> ","
             , "  decoder: " <> renderDecoder (DecoderLazy tplDecoder) <> ","
             , "  encode: " <> renderEncode tplEncode <> ","
-            , "  choices: ['" <> T.intercalate "', '" (chcName' <$> tplChoices') <> "'],"
             ]
           , concat
             [ [ "  " <> chcName' <> ": {"
@@ -369,15 +372,28 @@ renderTemplateDef TemplateDef{..} =
               , "    choiceName: '" <> chcName' <> "',"
               , "    argumentDecoder: " <> renderDecoder (DecoderLazy (DecoderRef chcArgTy)) <> ","
               , "    argumentEncode: " <> renderEncode (EncodeRef chcArgTy) <> ","
-              , "    argumentMeta: " <> snd (genType chcArgTy) <> ","
               , "    resultDecoder: " <> renderDecoder (DecoderLazy (DecoderRef chcRetTy)) <> ","
               , "    resultEncode: " <> renderEncode (EncodeRef chcRetTy) <> ","
-              , "    resultMeta: " <> snd (genType chcRetTy) <> ","
               , "  },"
               ]
             | ChoiceDef{..} <- tplChoices'
             ]
           , [ "};" ]
+          , [ "exports.meta.templates." <> tplName <> " = {"
+            , "  template: exports." <> tplName <> ","
+            , "  choices: {"
+            ]
+          , concat
+            [ [ "    " <> chcName' <> ": {"
+              , "      argument: " <> genTypeMeta chcArgTy <> ","
+              , "      result: " <> genTypeMeta chcRetTy <> ","
+              , "    },"
+              ]
+            | ChoiceDef{..} <- tplChoices'
+            ]
+          , [ "  },"
+            , "};"
+            ]
           ]
         tsDecl = T.unlines $ concat
           [ [ "export declare const " <> tplName <> ":"
@@ -425,7 +441,7 @@ data NestedSerializable = NestedSerializable
   }
 
 renderSerializableDef :: SerializableDef -> (T.Text, T.Text)
-renderSerializableDef SerializableDef{..}
+renderSerializableDef serDef@(SerializableDef{..})
   | null serParams =
     let tsDecl = T.unlines $ concat
             [ [ "export declare const " <> serName <> ":"
@@ -442,8 +458,7 @@ renderSerializableDef SerializableDef{..}
           , [ "  " <> k <> ": " <> "'" <> k <> "'," | k <- serKeys ]
           , [ "  keys: [" <> T.concat (map (\s -> "'" <> s <> "',") serKeys) <> "]," | notNull serKeys ]
           , [ "  decoder: " <> renderDecoder (DecoderLazy serDecoder) <> ",",
-              "  encode: " <> renderEncode serEncode <> ",",
-              "  meta: " <> renderEncodeAsMeta serEncode <> ","
+              "  encode: " <> renderEncode serEncode <> ","
             ]
           , concat $
             [ [ "  " <> field <> ":({"
@@ -454,6 +469,7 @@ renderSerializableDef SerializableDef{..}
             | NestedSerializable { field, decoder, encode } <- serNested
             ]
           , [ "};" ]
+          , [ "exports.meta.types." <> serName <> " = " <> renderEncodeAsMeta serDef <> ";" ]
           ]
     in (jsDecl, tsDecl)
   | otherwise = assert (null serKeys) $
@@ -484,6 +500,12 @@ renderSerializableDef SerializableDef{..}
               , "}); };"
               ]
             | NestedSerializable { field, encode, decoder } <- serNested
+            ] <>
+            [ "exports.meta.types." <> serName <> " = function " <> jsTyArgs <> " { return ("
+            -- , "  serialiable: exports." <> serName <> ","
+            -- , "  meta: " <> renderEncodeAsMeta serEncode <> ","
+            , renderEncodeAsMeta serDef
+            , "); };"
             ]
     in (jsSource, tsDecl)
   where tyParams = "<" <> T.intercalate ", " serParams <> ">"
@@ -564,26 +586,30 @@ renderEncode = \case
 -- Note: This shouldn't really be running off the Encode data type, but in the
 -- interest of expediency of showing the proposed solution Encode _does_
 -- contain all the information we need here. Fix before merging, of course.
-renderEncodeAsMeta :: Encode -> T.Text
-renderEncodeAsMeta = \case
-    EncodeRef ref -> let (_, companion) = genType ref in
+renderEncodeAsMeta :: SerializableDef -> T.Text
+renderEncodeAsMeta SerializableDef { serEncode, serKeys } = case serEncode of
+    EncodeRef ref -> let companion = genTypeMeta ref in
         companion
     EncodeVariant _ alts -> T.unlines $ concat
         [ [ "{ tag: 'oneOf', "
           , "  items: {"
           ]
         , [ "    " <> name <> ": " <> companion <> ","
-          | (name, tr) <- alts, let (_, companion) = genType tr ]
+          | (name, tr) <- alts, let companion = genTypeMeta tr ]
         , [ "  }"
           , "}" ] ]
-    EncodeAsIs -> "{ tag: 'enum' }"
+    EncodeAsIs -> T.unlines $ concat $
+      [ [ "{ tag: 'enum',"
+        , "  items: [" ]
+      , [ "    '" <> k <> "'," | k <- serKeys ]
+      , [ "  ]}" ]]
     EncodeRecord fields -> T.unlines $ concat
         [ [ "{"
           , "    tag: 'recordOf', "
           , "    items: {"
           ]
         , [ "      " <> name <> ": " <> companion <> ","
-          | (name, tr) <- fields, let (_, companion) = genType tr ]
+          | (name, tr) <- fields, let companion = genTypeMeta tr ]
         , [ "    }"
           , "  }" ] ]
     EncodeThrow -> "function () { throw 'EncodeError'; }"
@@ -759,6 +785,60 @@ infixr 6 <.> -- This is the same fixity as '<>'.
 (<.>) :: T.Text -> T.Text -> T.Text
 (<.>) u v = u <> "." <> v
 
+-- | Returns a runtime description of the type
+genTypeMeta :: TypeRef -> T.Text
+genTypeMeta (TypeRef curModName t) = go t
+  where
+    go = \case
+        TVar v -> unTypeVarName v
+        TUnit -> "damlTypesMeta.Unit"
+        TBool -> "damlTypesMeta.Bool"
+        TInt64 -> "damlTypesMeta.Int"
+        TDecimal -> "damlTypesMeta.Decimal"
+        TNumeric (TNat n) -> "damlTypesMeta.Numeric(" <> T.pack (show (fromTypeLevelNat n :: Integer)) <> ")"
+        TText -> "damlTypesMeta.Text"
+        TTimestamp -> "damlTypesMeta.Time"
+        TParty -> "damlTypesMeta.Party"
+        TDate -> "damlTypesMeta.Date"
+        TList t ->
+            let ser = go t
+            in
+            ("damlTypesMeta.List(" <> ser <> ")")
+        TOptional t ->
+            let ser = go t
+            in
+            ("damlTypesMeta.Optional(" <> ser <> ")")
+        TTextMap t  ->
+            let ser = go t
+            in
+            ("damlTypesMeta.TextMap(" <> ser <> ")")
+        TGenMap k v ->
+            let kser = go k
+                vser = go v
+            in
+            ("damlTypesMeta.Map(" <> kser <> ", " <> vser <> ")")
+        TUpdate _ -> error "IMPOSSIBLE: Update not serializable"
+        TScenario _ -> error "IMPOSSIBLE: Scenario not serializable"
+        TContractId t ->
+            let ser = go t
+            in
+            ("damlTypesMeta.ContractId(" <> ser <> ")")
+        TConApp con ts ->
+            let ser = genTypeConMeta curModName con
+                sers = map go ts
+            in
+            if null ts
+                then ser
+                else
+                    ser <> "(" <> T.intercalate ", " sers <> ")"
+        TCon _ -> error "IMPOSSIBLE: lonely type constructor"
+        TSynApp{} -> error "IMPOSSIBLE: type synonym not serializable"
+        t@TApp{} -> error $ "IMPOSSIBLE: type application not serializable - " <> DA.Pretty.renderPretty t
+        TBuiltin t -> error $ "IMPOSSIBLE: partially applied primitive type not serializable - " <> DA.Pretty.renderPretty t
+        TForall{} -> error "IMPOSSIBLE: universally quantified type not serializable"
+        TStruct{} -> error "IMPOSSIBLE: structural record not serializable"
+        TNat{} -> error "IMPOSSIBLE: standalone type level natural not serializable"
+
 -- | Returns a pair of the type and a reference to the
 -- companion object/function.
 genType :: TypeRef -> (T.Text, T.Text)
@@ -836,6 +916,26 @@ genTypeCon curModName (Qualified pkgRef modName conParts) =
           | modRef == (PRSelf, curModName) ->
             (conName, "exports" <.> conName)
           | otherwise -> dupe $ genModuleRef modRef <.> conName
+     where
+       modRef = (pkgRef, modName)
+
+-- | Pair of a reference to the type and a reference to the serializer.
+-- Note that the serializer is in JS file whereas the type is in the TS
+-- declaration file. Therefore they refer to things in the current module
+-- differently.
+genTypeConMeta :: ModuleName -> Qualified TypeConName -> T.Text
+genTypeConMeta curModName (Qualified pkgRef modName conParts) =
+    case unTypeConName conParts of
+        [] -> error "IMPOSSIBLE: empty type constructor name"
+        _: _: _: _ -> error "TODO(MH): multi-part type constructor names"
+        [c1 ,c2]
+          | modRef == (PRSelf, curModName) ->
+            "exports.meta.types" <.> c1 <.> c2
+          | otherwise -> genModuleRef modRef <> c1 <.> c2
+        [conName]
+          | modRef == (PRSelf, curModName) ->
+            "exports.meta.types" <.> conName
+          | otherwise -> genModuleRef modRef <.> "meta.types" <.> conName
      where
        modRef = (pkgRef, modName)
 
