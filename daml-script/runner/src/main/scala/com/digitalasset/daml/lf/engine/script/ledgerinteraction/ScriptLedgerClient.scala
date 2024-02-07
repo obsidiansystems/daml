@@ -131,6 +131,13 @@ trait ScriptLedgerClient {
       optLocation: Option[Location],
   )(implicit ec: ExecutionContext, mat: Materializer): Future[Either[Unit, Unit]]
 
+  def submitMightFail(
+      actAs: OneAnd[Set, Ref.Party],
+      readAs: Set[Ref.Party],
+      commands: List[command.ApiCommand],
+      optLocation: Option[Location],
+  )(implicit ec: ExecutionContext, mat: Materializer): Future[Either[Unit, Seq[ScriptLedgerClient.CommandResult]]]
+
   def submitTree(
       actAs: OneAnd[Set, Ref.Party],
       readAs: Set[Ref.Party],

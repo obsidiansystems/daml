@@ -343,6 +343,19 @@ class JsonLedgerClient(
     }
   }
 
+  override def submitMightFail(
+      actAs: OneAnd[Set, Ref.Party],
+      readAs: Set[Ref.Party],
+      commands: List[command.ApiCommand],
+      optLocation: Option[Location],
+  )(implicit ec: ExecutionContext, mat: Materializer):
+  Future[Either[Unit, Seq[ScriptLedgerClient.CommandResult]]] = {
+    submit(actAs, readAs, commands, optLocation).map {
+      case Right(_) => Left(())
+      case Left(_) => Left(())
+    }
+  }
+
   override def submitTree(
       actAs: OneAnd[Set, Ref.Party],
       readAs: Set[Ref.Party],

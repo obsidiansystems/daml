@@ -366,6 +366,42 @@ class IdeLedgerClient(
         Right(())
     }
 
+  override def submitMightFail(
+      actAs: OneAnd[Set, Ref.Party],
+      readAs: Set[Ref.Party],
+      commands: List[command.ApiCommand],
+      optLocation: Option[Location],
+  )(implicit ec: ExecutionContext, mat: Materializer): Future[Either[Unit, Seq[ScriptLedgerClient.CommandResult]]] =
+    unsafeSubmit(actAs, readAs, commands, optLocation).map {
+      case Right(ScenarioRunner.Commit(result, _, _)) =>
+        _currentSubmission = None
+        _ledger = result.newLedger
+        val transaction = result.richTransaction.transaction
+        def convRootEvent(id: NodeId): ScriptLedgerClient.CommandResult = {
+          val node = transaction.nodes.getOrElse(
+            id,
+            throw new IllegalArgumentException(s"Unknown root node id $id"),
+          )
+          node match {
+            case create: Node.Create => ScriptLedgerClient.CreateResult(create.coid)
+            case exercise: Node.Exercise =>
+              ScriptLedgerClient.ExerciseResult(
+                exercise.templateId,
+                exercise.interfaceId,
+                exercise.choiceId,
+                exercise.exerciseResult.get,
+              )
+            case _: Node.Fetch | _: Node.LookupByKey | _: Node.Rollback | _: Node.Authority =>
+              throw new IllegalArgumentException(s"Invalid root node: $node")
+          }
+        }
+        Right(transaction.roots.toSeq.map(convRootEvent))
+      case Left(_) =>
+        _currentSubmission = None
+        _ledger = ledger.insertAssertMustFail(actAs.toSet, readAs, optLocation)
+        Left(())
+    }
+
   override def submitTree(
       actAs: OneAnd[Set, Ref.Party],
       readAs: Set[Ref.Party],

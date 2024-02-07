@@ -8,6 +8,7 @@ module Daml.Script
   ( Script
   , submit
   , submitMustFail
+  , submitMightFail
   , submitMulti
   , submitMultiMustFail
   , submitTree
@@ -127,6 +128,7 @@ newtype Commands a = Commands (Ap CommandsF a)
 data ScriptF a
   = Submit (SubmitCmd a)
   | SubmitMustFail (SubmitMustFailCmd a)
+  | SubmitMightFail (SubmitMightFailCmd a)
   | SubmitTree (SubmitTreePayload a)
   | Query (QueryACS a)
   | QueryContractId (QueryContractIdPayload a)
@@ -497,6 +499,16 @@ data SubmitMustFailCmd a = SubmitMustFailCmd
     locations : [(Text, SrcLoc)]
   deriving Functor
 
+data SubmitMightFailCmd a = SubmitMightFailCmd
+  with
+    actAs : NonEmpty Party
+    readAs : [Party]
+    commands : Commands a
+    continue : () -> Free ScriptF (a, ())
+    handleFailure : () -> Free Script ((), ())
+    locations : [(Text, SrcLoc)]
+  deriving Functor
+
 -- | Submit the commands as a single transaction.
 
 -- This will error if the submission fails.
@@ -517,6 +529,16 @@ instance HasSubmit Script Commands where
       commands = void cmds
       continue = const ()
       locations = getCallStack callStack
+
+--submitMightFail : HasCallStack => Party -> Commands a -> m a
+submitMightFail p cmds =
+  lift $ Free $ fmap pure $ SubmitMightFail $ SubmitMightFailCmd with
+    actAs = NonEmpty p []
+    readAs = []
+    commands = cmds
+    continue = runScript $ script $ throw $ AssertionFailed "Daml.Script.submitMightFail: Assertion thrown"
+    handleFailure = runScript $ script $ pure ()
+    locations = getCallStack callStack
 
 -- There are a few different options for passing the parties here:
 --

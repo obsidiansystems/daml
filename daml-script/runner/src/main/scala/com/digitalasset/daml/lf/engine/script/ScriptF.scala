@@ -182,6 +182,43 @@ object ScriptF {
       } yield v
 
   }
+  final case class SubmitMightFail(data: SubmitData) extends Cmd {
+    override def stackTrace = data.stackTrace
+
+    override def description = "submitMustFail"
+
+    override def execute(
+        env: Env
+    )(implicit ec: ExecutionContext, mat: Materializer, esf: ExecutionSequencerFactory) =
+      for {
+        client <- Converter.toFuture(
+          env.clients
+            .getPartiesParticipant(data.actAs)
+        )
+        submitRes <- client.submitMightFail(
+          data.actAs,
+          data.readAs,
+          data.cmds,
+          data.stackTrace.topFrame,
+        )
+        v <- submitRes match {
+          case Right(results) =>
+            Converter.toFuture(
+              Converter
+                .fillCommandResults(
+                  env.compiledPackages,
+                  env.lookupChoice,
+                  env.valueTranslator,
+                  data.freeAp,
+                  results,
+                )
+            )
+          case Left(()) =>
+            Future.successful(SEAppAtomic(SEValue(data.continue), Array(SEValue(SUnit))))
+        }
+      } yield v
+
+  }
   final case class SubmitTree(data: SubmitData) extends Cmd {
     override def stackTrace = data.stackTrace
     override def description = "submitTree"
@@ -1076,6 +1113,7 @@ object ScriptF {
       case "GrantUserRights" => parseGrantUserRights(ctx, v)
       case "RevokeUserRights" => parseRevokeUserRights(ctx, v)
       case "ListUserRights" => parseListUserRights(ctx, v)
+      case "SubmitMightFail" => parseSubmit(ctx, v).map(SubmitMightFail(_))
       case _ => Left(s"Unknown constructor $constr")
     }
 
