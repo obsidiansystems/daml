@@ -505,7 +505,7 @@ data SubmitMightFailCmd a = SubmitMightFailCmd
     readAs : [Party]
     commands : Commands a
     continue : () -> Free ScriptF (a, ())
-    handleFailure : () -> Free Script ((), ())
+    handleFailure : () -> Free ScriptF ((), ())
     locations : [(Text, SrcLoc)]
   deriving Functor
 
@@ -530,7 +530,7 @@ instance HasSubmit Script Commands where
       continue = const ()
       locations = getCallStack callStack
 
---submitMightFail : HasCallStack => Party -> Commands a -> m a
+submitMightFail : HasCallStack => Party -> Commands a -> Script a
 submitMightFail p cmds =
   lift $ Free $ fmap pure $ SubmitMightFail $ SubmitMightFailCmd with
     actAs = NonEmpty p []
