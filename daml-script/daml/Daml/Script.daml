@@ -505,7 +505,6 @@ data SubmitMightFailCmd a = SubmitMightFailCmd
     readAs : [Party]
     commands : Commands a
     continue : () -> Free ScriptF (a, ())
-    handleFailure : () -> Free ScriptF ((), ())
     locations : [(Text, SrcLoc)]
   deriving Functor
 
@@ -537,7 +536,6 @@ submitMightFail p cmds =
     readAs = []
     commands = cmds
     continue = runScript $ script $ throw $ AssertionFailed "Daml.Script.submitMightFail: Assertion thrown"
-    handleFailure = runScript $ script $ pure ()
     locations = getCallStack callStack
 
 -- There are a few different options for passing the parties here:
